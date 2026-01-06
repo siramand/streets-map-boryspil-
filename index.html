@@ -346,7 +346,18 @@
             const status = document.getElementById('status');
             status.textContent = 'Завантаження всіх вулиць міста...';
             
-            const bbox = `${bounds.south},${bounds.west},${bounds.north},${bounds.east}`;
+            // Розширюємо bbox на 20% в кожну сторону для покриття околиць
+            const latMargin = (bounds.north - bounds.south) * 0.2;
+            const lonMargin = (bounds.east - bounds.west) * 0.2;
+            
+            const expandedBounds = {
+                south: bounds.south - latMargin,
+                north: bounds.north + latMargin,
+                west: bounds.west - lonMargin,
+                east: bounds.east + lonMargin
+            };
+            
+            const bbox = `${expandedBounds.south},${expandedBounds.west},${expandedBounds.north},${expandedBounds.east}`;
             
             const query = `[out:json][timeout:180][bbox:${bbox}];
 way["highway"]["name"];
