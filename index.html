@@ -571,9 +571,8 @@ out geom;`;
             let found = 0;
             let notFound = [];
             const polylines = [];
-            const foundStreets = new Set(); // Для відстеження знайдених вулиць
+            const foundStreets = new Set();
             
-            // Спочатку малюємо всі вулиці сірим
             Object.keys(allStreets).forEach(streetName => {
                 const isTarget = isTargetStreet(streetName);
                 
@@ -598,17 +597,14 @@ out geom;`;
                 }
             });
             
-            // Перевіряємо які вулиці не знайдено - порівнюємо з нашим списком
             targetStreets.forEach(street => {
                 const normalized = normalizeStreetName(street);
                 
-                // Шукаємо чи є ця вулиця серед знайдених
                 let foundMatch = false;
                 for (let foundStreet of foundStreets) {
                     const targetWords = normalized.split(/\s+/);
                     const foundWords = foundStreet.split(/\s+/);
                     
-                    // Перевіряємо співпадіння
                     if (foundStreet === normalized) {
                         foundMatch = true;
                         break;
@@ -627,7 +623,6 @@ out geom;`;
                 }
             });
             
-            // Рахуємо унікальні знайдені вулиці з нашого списку
             const actualFoundCount = targetStreets.length - notFound.length;
             foundCountEl.textContent = actualFoundCount;
             progressFill.style.width = '100%';
@@ -638,15 +633,26 @@ out geom;`;
                 map.fitBounds(group.getBounds().pad(0.1));
             }
             
-            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${found} з ${targetStreets.length} вулиць`;
+            console.log(`Основне завантаження: знайдено ${actualFoundCount}, не знайдено ${notFound.length}`);
+            
+            return notFound;
+        }
+
+        function finalizeResults(notFound) {
+            const status = document.getElementById('status');
+            const foundCountEl = document.getElementById('foundCount');
+            
+            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${foundCountEl.textContent} з ${targetStreets.length} вулиць`;
             
             if (notFound.length > 0) {
+                console.log('=== ВІДЛАДКА ===');
                 console.log('Не знайдені вулиці:', notFound);
-                console.log('Всі вулиці з OSM:', Object.keys(allStreets).sort());
+                console.log('Ваш список (нормалізований):', targetStreets.map(s => normalizeStreetName(s)));
+                console.log('Всі вулиці з OSM (нормалізовані):', Object.keys(allStreets).map(s => normalizeStreetName(s)).sort());
+                console.log('Всі вулиці з OSM (оригінальні):', Object.keys(allStreets).sort());
                 
-                status.innerHTML += `<br><small style="color:#e67e22;">Не знайдено: ${notFound.length} вулиць (дивись нижче)</small>`;
+                status.innerHTML += `<br><small style="color:#e67e22;">Залишилось не знайдено: ${notFound.length} вулиць</small>`;
                 
-                // Показуємо список незнайдених
                 const notFoundList = document.getElementById('notFoundList');
                 const notFoundItems = document.getElementById('notFoundItems');
                 notFoundList.style.display = 'block';
@@ -658,7 +664,6 @@ out geom;`;
                     notFoundItems.appendChild(li);
                 });
                 
-                // Не ховаємо панель контролів якщо є незнайдені вулиці
                 return;
             }
             
@@ -718,12 +723,12 @@ out geom;`;
             if (success) {
                 const initialNotFound = drawStreets();
                 
-                // Якщо є незнайдені вулиці - шукаємо їх додатково
                 if (initialNotFound.length > 0) {
+                    console.log(`Розпочинаємо дошук ${initialNotFound.length} незнайдених вулиць...`);
                     const stillNotFound = await searchForMissingStreets(initialNotFound);
-                    await finalizeResults(stillNotFound);
+                    finalizeResults(stillNotFound);
                 } else {
-                    await finalizeResults([]);
+                    finalizeResults([]);
                 }
             }
         }
