@@ -346,9 +346,9 @@
             const status = document.getElementById('status');
             status.textContent = 'Завантаження всіх вулиць міста...';
             
-            // Розширюємо bbox на 20% в кожну сторону для покриття околиць
-            const latMargin = (bounds.north - bounds.south) * 0.2;
-            const lonMargin = (bounds.east - bounds.west) * 0.2;
+            // Розширюємо bbox на 50% в кожну сторону для покриття віддалених районів
+            const latMargin = (bounds.north - bounds.south) * 0.5;
+            const lonMargin = (bounds.east - bounds.west) * 0.5;
             
             const expandedBounds = {
                 south: bounds.south - latMargin,
@@ -503,14 +503,11 @@ out geom;`;
                 map.fitBounds(group.getBounds().pad(0.1));
             }
             
-            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${actualFoundCount} з ${targetStreets.length} вулиць`;
+            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${found} з ${targetStreets.length} вулиць`;
             
             if (notFound.length > 0) {
-                console.log('=== ВІДЛАДКА ===');
                 console.log('Не знайдені вулиці:', notFound);
-                console.log('Ваш список (нормалізований):', targetStreets.map(s => normalizeStreetName(s)));
-                console.log('Всі вулиці з OSM (нормалізовані):', Object.keys(allStreets).map(s => normalizeStreetName(s)).sort());
-                console.log('Всі вулиці з OSM (оригінальні):', Object.keys(allStreets).sort());
+                console.log('Всі вулиці з OSM:', Object.keys(allStreets).sort());
                 
                 status.innerHTML += `<br><small style="color:#e67e22;">Не знайдено: ${notFound.length} вулиць (дивись нижче)</small>`;
                 
