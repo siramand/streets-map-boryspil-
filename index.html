@@ -359,8 +359,14 @@
             
             const bbox = `${expandedBounds.south},${expandedBounds.west},${expandedBounds.north},${expandedBounds.east}`;
             
-            const query = `[out:json][timeout:180][bbox:${bbox}];
-way["highway"]["name"];
+            const query = `[out:json][timeout:180];
+(
+  // Шукаємо по bbox (розширеному)
+  way["highway"]["name"]["addr:city"="${cityName}"](${bbox});
+  way["highway"]["name"]["addr:city"~"${cityName}",i](${bbox});
+  // Також шукаємо просто в bbox без прив'язки до міста (на випадок якщо addr:city не вказано)
+  way["highway"]["name"](${bbox});
+);
 out geom;`;
 
             // Список альтернативних серверів Overpass
@@ -430,6 +436,7 @@ out geom;`;
             let found = 0;
             let notFound = [];
             const polylines = [];
+            const foundStreets = new Set(); // Для відстеження знайдених вулиць
             
             // Спочатку малюємо всі вулиці сірим
             Object.keys(allStreets).forEach(streetName => {
@@ -452,25 +459,42 @@ out geom;`;
                 
                 if (isTarget) {
                     found++;
+                    foundStreets.add(normalizeStreetName(streetName));
                 }
             });
             
-            // Перевіряємо які вулиці не знайдено
+            // Перевіряємо які вулиці не знайдено - порівнюємо з нашим списком
             targetStreets.forEach(street => {
                 const normalized = normalizeStreetName(street);
-                const foundInData = Object.keys(allStreets).some(osmName => {
-                    const osmNormalized = normalizeStreetName(osmName);
-                    return osmNormalized === normalized || 
-                           osmNormalized.includes(normalized) || 
-                           normalized.includes(osmNormalized);
-                });
                 
-                if (!foundInData) {
+                // Шукаємо чи є ця вулиця серед знайдених
+                let foundMatch = false;
+                for (let foundStreet of foundStreets) {
+                    const targetWords = normalized.split(/\s+/);
+                    const foundWords = foundStreet.split(/\s+/);
+                    
+                    // Перевіряємо співпадіння
+                    if (foundStreet === normalized) {
+                        foundMatch = true;
+                        break;
+                    }
+                    
+                    if (targetWords.length > 0 && targetWords.every(word => 
+                        foundWords.some(foundWord => foundWord === word || foundWord.startsWith(word) || word.startsWith(foundWord))
+                    )) {
+                        foundMatch = true;
+                        break;
+                    }
+                }
+                
+                if (!foundMatch) {
                     notFound.push(street);
                 }
             });
             
-            foundCountEl.textContent = found;
+            // Рахуємо унікальні знайдені вулиці з нашого списку
+            const actualFoundCount = targetStreets.length - notFound.length;
+            foundCountEl.textContent = actualFoundCount;
             progressFill.style.width = '100%';
             progressFill.textContent = '100%';
             
@@ -479,11 +503,14 @@ out geom;`;
                 map.fitBounds(group.getBounds().pad(0.1));
             }
             
-            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${found} з ${targetStreets.length} вулиць`;
+            status.innerHTML = `<strong>✓ Завершено!</strong><br>Знайдено: ${actualFoundCount} з ${targetStreets.length} вулиць`;
             
             if (notFound.length > 0) {
+                console.log('=== ВІДЛАДКА ===');
                 console.log('Не знайдені вулиці:', notFound);
-                console.log('Всі вулиці з OSM:', Object.keys(allStreets).sort());
+                console.log('Ваш список (нормалізований):', targetStreets.map(s => normalizeStreetName(s)));
+                console.log('Всі вулиці з OSM (нормалізовані):', Object.keys(allStreets).map(s => normalizeStreetName(s)).sort());
+                console.log('Всі вулиці з OSM (оригінальні):', Object.keys(allStreets).sort());
                 
                 status.innerHTML += `<br><small style="color:#e67e22;">Не знайдено: ${notFound.length} вулиць (дивись нижче)</small>`;
                 
