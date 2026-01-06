@@ -273,9 +273,22 @@
             const normalized = normalizeStreetName(osmName);
             return targetStreets.some(street => {
                 const normalizedTarget = normalizeStreetName(street);
-                return normalized === normalizedTarget || 
-                       normalized.includes(normalizedTarget) || 
-                       normalizedTarget.includes(normalized);
+                
+                // Точне співпадіння
+                if (normalized === normalizedTarget) return true;
+                
+                // Перевіряємо чи це окремі слова (не підрядки)
+                const osmWords = normalized.split(/\s+/);
+                const targetWords = normalizedTarget.split(/\s+/);
+                
+                // Якщо всі слова з target є в osm (в правильному порядку)
+                if (targetWords.length > 0 && targetWords.every(word => 
+                    osmWords.some(osmWord => osmWord === word || osmWord.startsWith(word) || word.startsWith(osmWord))
+                )) {
+                    return true;
+                }
+                
+                return false;
             });
         }
 
