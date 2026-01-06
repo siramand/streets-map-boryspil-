@@ -151,6 +151,11 @@
         .legend.visible {
             display: block;
         }
+        .legend h4 {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #2c3e50;
+        }
         .legend-item {
             margin: 8px 0;
             display: flex;
@@ -250,13 +255,18 @@
     </div>
     
     <div class="legend" id="legend">
+        <h4>Легенда:</h4>
         <div class="legend-item">
             <div class="legend-color" style="background: linear-gradient(90deg, #e74c3c, #c0392b); height: 6px;"></div>
             <span><strong>Виділені вулиці</strong></span>
         </div>
         <div class="legend-item">
+            <div class="legend-color" style="background: #27ae60; height: 6px;"></div>
+            <span>Знайдено додатково</span>
+        </div>
+        <div class="legend-item">
             <div class="legend-color" style="background: #bdc3c7;"></div>
-            <span>Інші вулиці (для контексту)</span>
+            <span>Інші вулиці</span>
         </div>
     </div>
 
@@ -286,6 +296,54 @@
                 .map(s => s.trim())
                 .filter(s => s.length > 0);
             return streets;
+        }
+
+        const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+        async function searchMissingStreet(streetName) {
+            const queries = [
+                `${streetName}, ${cityName}, Україна`,
+                `вулиця ${streetName}, ${cityName}`,
+                `${streetName} street, ${cityName}, Ukraine`
+            ];
+            
+            for (let query of queries) {
+                try {
+                    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&polygon_geojson=1&addressdetails=1&limit=5`;
+                    
+                    const response = await fetch(url, {
+                        headers: {
+                            'User-Agent': 'StreetsMapApp/1.0'
+                        }
+                    });
+                    
+                    if (!response.ok) continue;
+                    
+                    const data = await response.json();
+                    
+                    for (let item of data) {
+                        if (item.geojson && 
+                            (item.geojson.type === 'LineString' || item.geojson.type === 'MultiLineString') &&
+                            item.address) {
+                            
+                            const city = item.address.city || item.address.town || item.address.village || '';
+                            const normalizedCity = city.toLowerCase();
+                            const normalizedTargetCity = cityName.toLowerCase();
+                            
+                            if (normalizedCity.includes(normalizedTargetCity) || normalizedTargetCity.includes(normalizedCity)) {
+                                return {
+                                    name: item.address.road || streetName,
+                                    geojson: item.geojson
+                                };
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error(`Помилка пошуку "${query}":`, error);
+                }
+            }
+            
+            return null;
         }
 
         function normalizeStreetName(name) {
@@ -426,6 +484,83 @@ out geom;`;
             
             status.innerHTML = `<span style="color:#e74c3c;">Не вдалося завантажити дані з жодного сервера</span>`;
             return false;
+        }
+
+        async function searchForMissingStreets(notFoundList) {
+            const status = document.getElementById('status');
+            const progressFill = document.getElementById('progressFill');
+            const foundCountEl = document.getElementById('foundCount');
+            
+            status.innerHTML = `<strong>🔍 Дошук незнайдених вулиць...</strong><br>Зачекайте, це займе ${notFoundList.length} * 3-4 сек`;
+            
+            let additionalFound = 0;
+            const stillNotFound = [];
+            const polylines = [];
+            
+            for (let i = 0; i < notFoundList.length; i++) {
+                const street = notFoundList[i];
+                const progress = ((i + 1) / notFoundList.length * 100).toFixed(0);
+                
+                progressFill.style.width = progress + '%';
+                progressFill.textContent = progress + '%';
+                status.innerHTML = `<strong>🔍 Дошук:</strong> ${street}... (${i + 1}/${notFoundList.length})`;
+                
+                const result = await searchMissingStreet(street);
+                
+                if (result) {
+                    additionalFound++;
+                    
+                    // Додаємо до allStreets
+                    if (!allStreets[result.name]) {
+                        allStreets[result.name] = [];
+                    }
+                    
+                    // Малюємо на карті
+                    const geojson = result.geojson;
+                    let coords;
+                    
+                    if (geojson.type === 'LineString') {
+                        coords = geojson.coordinates.map(c => [c[1], c[0]]);
+                        const polyline = L.polyline(coords, {
+                            color: '#27ae60', // Зелений для додатково знайдених
+                            weight: 7,
+                            opacity: 0.85
+                        })
+                        .bindPopup(`<b>✓ ${street}</b><br><small>(знайдено додатково)</small>`)
+                        .addTo(map);
+                        polylines.push(polyline);
+                        
+                    } else if (geojson.type === 'MultiLineString') {
+                        geojson.coordinates.forEach(line => {
+                            coords = line.map(c => [c[1], c[0]]);
+                            const polyline = L.polyline(coords, {
+                                color: '#27ae60',
+                                weight: 7,
+                                opacity: 0.85
+                            })
+                            .bindPopup(`<b>✓ ${street}</b><br><small>(знайдено додатково)</small>`)
+                            .addTo(map);
+                            polylines.push(polyline);
+                        });
+                    }
+                } else {
+                    stillNotFound.push(street);
+                }
+                
+                // Затримка між запитами (Nominatim вимагає)
+                await delay(1200);
+            }
+            
+            // Оновлюємо статистику
+            const totalFound = parseInt(foundCountEl.textContent) + additionalFound;
+            foundCountEl.textContent = totalFound;
+            
+            if (polylines.length > 0) {
+                const group = L.featureGroup(polylines);
+                map.fitBounds(group.getBounds().pad(0.1));
+            }
+            
+            return stillNotFound;
         }
 
         function drawStreets() {
@@ -581,7 +716,15 @@ out geom;`;
             const success = await loadAllStreetsFromCity(bounds);
             
             if (success) {
-                drawStreets();
+                const initialNotFound = drawStreets();
+                
+                // Якщо є незнайдені вулиці - шукаємо їх додатково
+                if (initialNotFound.length > 0) {
+                    const stillNotFound = await searchForMissingStreets(initialNotFound);
+                    await finalizeResults(stillNotFound);
+                } else {
+                    await finalizeResults([]);
+                }
             }
         }
     </script>
